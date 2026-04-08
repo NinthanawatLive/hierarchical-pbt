@@ -1,3 +1,185 @@
+"""
+FastLoop -- High-frequency policy execution loop (M2 + M3 update).
+M3: integrates SlowLoop coroutine, real_time flag. Backward compatible.
+"""
+import time
+import json
+import logging
+import contextlib
+from typing import Optional, Callable, List
+import numpy as np
+
+try:
+    import torch
+except ImportError:
+    torch = None
+
+logger = logging.getLogger(__name__)
+
+
+class FastLoop:
+    """High-frequency control loop: buffer -> policy -> env -> log."""
+
+    def __init__(self, env, policy, buffer, slow_loop=None,
+                 real_time=False, dt=0.02, log_every=1):
+        self.env = env
+        self.policy = policy
+        self.buffer = buffer
+        self.slow_loop = slow_loop
+        self.real_time = real_time
+        self.dt = dt
+        self.log_every = log_every
+        self._on_step_callbacks = []
+        self.step_count = 0
+        self.running = False
+        self.log_data = []
+
+    def add_on_step(self, callback):
+        self._on_step_callbacks.append(callback)
+
+    def run(self, num_steps, log_path=None):
+        self.running = True
+        self.step_count = 0
+        self.log_data = []
+        wall_start = time.perf_counter()
+        step_times = []
+
+        logger.info(f"FastLoop starting: {num_steps} steps, "
+                     f"slow_loop={'ON' if self.slow_loop else 'OFF'}, "
+                     f"real_time={self.real_time}")
+        try:
+            for step in range(num_steps):
+                step_start = time.perf_counter()
+
+                # SlowLoop tick (M3)
+                if self.slow_loop is not None and self.slow_loop.should_tick(step):
+                    self.slow_loop.tick(step)
+
+                # Read command
+                vx, wz = self.buffer.read()
+
+                # Apply command to env
+                self._apply_command(vx, wz)
+
+                # Run policy
+                with self._inference_context():
+                    obs = self._get_obs()
+                    actions = self._run_policy(obs)
+
+                # Step env
+                self._apply_actions(actions)
+                self.env.step_sim()
+
+                # Log
+                if step % self.log_every == 0:
+                    self._log_step(step, vx, wz)
+
+                # Callbacks
+                for cb in self._on_step_callbacks:
+                    try:
+                        cb(step, self.env, self.buffer)
+                    except Exception as e:
+                        logger.warning(f"Callback error: {e}")
+
+                # Real-time pacing (Q4)
+                step_dt = time.perf_counter() - step_start
+                step_times.append(step_dt)
+                if self.real_time:
+                    sleep_time = self.dt - step_dt
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
+                self.step_count = step + 1
+
+        except KeyboardInterrupt:
+            logger.info(f"FastLoop interrupted at step {self.step_count}")
+        finally:
+            self.running = False
+
+        wall_total = time.perf_counter() - wall_start
+        step_times_np = np.array(step_times)
+        summary = {
+            "total_steps": self.step_count,
+            "wall_time_s": round(wall_total, 2),
+            "hz": round(self.step_count / max(wall_total, 1e-6), 1),
+            "step_dt_mean_ms": round(step_times_np.mean() * 1000, 2),
+            "step_dt_p99_ms": round(np.percentile(step_times_np, 99) * 1000, 2),
+            "step_dt_max_ms": round(step_times_np.max() * 1000, 2),
+            "slow_loop_stats": (
+                self.slow_loop.get_stats() if self.slow_loop else None),
+        }
+        logger.info(f"FastLoop done: {summary}")
+        if log_path and self.log_data:
+            with open(log_path, "w") as f:
+                for row in self.log_data:
+                    f.write(json.dumps(row) + "\n")
+        return summary
+
+    def _apply_command(self, vx, wz):
+        try:
+            if hasattr(self.env, 'commands'):
+                self.env.commands[:, 0] = vx
+                self.env.commands[:, 1] = 0.0
+                self.env.commands[:, 2] = wz
+        except Exception as e:
+            logger.warning(f"apply_command failed: {e}")
+
+    def _get_obs(self):
+        try:
+            return self.env.get_obs()
+        except NotImplementedError:
+            return None
+
+    def _run_policy(self, obs):
+        if obs is None or self.policy is None:
+            return None
+        try:
+            if torch is not None:
+                with torch.no_grad():
+                    return self.policy(obs)
+            return None
+        except Exception as e:
+            logger.warning(f"Policy forward failed: {e}")
+            return None
+
+    def _apply_actions(self, actions):
+        if actions is None:
+            return
+        try:
+            self.env.set_dof_velocity_target(actions)
+        except Exception as e:
+            logger.warning(f"apply_actions failed: {e}")
+
+    def _inference_context(self):
+        if torch is not None:
+            return torch.inference_mode()
+        return contextlib.nullcontext()
+
+    def _log_step(self, step, vx, wz):
+        try:
+            def to_list(t):
+                if hasattr(t, 'cpu'): t = t.cpu().numpy()
+                if hasattr(t, 'tolist'): t = t.tolist()
+                if isinstance(t, list) and len(t) > 0 and isinstance(t[0], list):
+                    t = t[0]
+                return t
+            pos = to_list(self.env.base_pos)
+            lin_vel = to_list(self.env.base_lin_vel)
+            ang_vel = to_list(self.env.base_ang_vel)
+            _, _, source_tag, _ = self.buffer.read_with_meta()
+            row = {
+                "step": step, "cmd_vx": round(vx, 3), "cmd_wz": round(wz, 3),
+                "source": source_tag,
+                "pos_x": round(pos[0], 4) if len(pos) > 0 else 0,
+                "pos_y": round(pos[1], 4) if len(pos) > 1 else 0,
+                "pos_z": round(pos[2], 4) if len(pos) > 2 else 0,
+                "actual_vx": round(lin_vel[0], 4) if len(lin_vel) > 0 else 0,
+                "actual_vy": round(lin_vel[1], 4) if len(lin_vel) > 1 else 0,
+                "actual_wz": round(ang_vel[2], 4) if len(ang_vel) > 2 else 0,
+            }
+            self.log_data.append(row)
+        except Exception as e:
+            self.log_data.append({"step": step, "error": str(e)})
 """Fast loop — runs the borrowed walking skill at 50 Hz.
 
 Reads commands from `SharedCommandBuffer`, writes them into `env.commands`,
