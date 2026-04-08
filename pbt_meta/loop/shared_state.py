@@ -1,3 +1,78 @@
+"""
+SharedCommandBuffer -- Thread-safe command buffer (M2 + M3 update).
+M2 original: lock + 3-tuple, last-write-wins, auto-clamp.
+M3 update: source_tag, read_with_meta(), command history ring buffer.
+"""
+import threading
+import time
+from dataclasses import dataclass
+from typing import Tuple, List
+from collections import deque
+
+
+@dataclass
+class CommandEntry:
+    vx: float
+    wz: float
+    source_tag: str
+    timestamp: float
+    step: int = -1
+
+
+class SharedCommandBuffer:
+    """
+    Thread-safe command buffer for FastLoop <-> SlowLoop communication.
+    Last-write-wins, auto-clamp, lock-protected.
+    """
+
+    def __init__(self, vx_range=(-1.0, 1.0), wz_range=(-1.0, 1.0), history_size=1000):
+        self._lock = threading.Lock()
+        self._vx = 0.0
+        self._wz = 0.0
+        self._source_tag = "init"
+        self._timestamp = time.time()
+        self._write_count = 0
+        self.vx_range = vx_range
+        self.wz_range = wz_range
+        self._history = deque(maxlen=history_size)
+
+    def write(self, vx, wz, source_tag="unknown", step=-1):
+        vx = max(self.vx_range[0], min(self.vx_range[1], float(vx)))
+        wz = max(self.wz_range[0], min(self.wz_range[1], float(wz)))
+        with self._lock:
+            self._vx = vx
+            self._wz = wz
+            self._source_tag = source_tag
+            self._timestamp = time.time()
+            self._write_count += 1
+            self._history.append(CommandEntry(
+                vx=vx, wz=wz, source_tag=source_tag,
+                timestamp=self._timestamp, step=step))
+
+    def read(self):
+        with self._lock:
+            return self._vx, self._wz
+
+    def read_with_meta(self):
+        with self._lock:
+            return self._vx, self._wz, self._source_tag, self._timestamp
+
+    @property
+    def write_count(self):
+        with self._lock:
+            return self._write_count
+
+    @property
+    def source_tag(self):
+        with self._lock:
+            return self._source_tag
+
+    def get_history(self, n=100):
+        with self._lock:
+            return list(self._history)[-n:]
+
+    def reset(self):
+        self.write(0.0, 0.0, "reset")
 """Shared command buffer — thread-safe interface between command producers
 (M2: slider; M3: SlowLoop/VLM) and the FastLoop consumer.
 
