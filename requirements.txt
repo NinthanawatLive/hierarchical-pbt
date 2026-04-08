@@ -1,0 +1,23 @@
+# Hierarchical PBT — Phase 1 dependencies
+# Tested on Google Colab L4 GPU, Python 3.12, CUDA 12.x
+
+# Core simulation
+genesis-world==0.4.3
+
+# RL training (must be 5.0.0+ — Genesis main branch is TensorDict-native)
+rsl-rl-lib==5.0.0
+tensorboard
+
+# VLM (slow loop, M3+)
+ollama
+
+# Image / utils
+Pillow
+numpy
+matplotlib
+psutil
+
+# NOTE: Ollama itself (the binary) must be installed separately via:
+#   sudo apt-get install -y zstd pciutils lshw
+#   curl -fsSL https://ollama.com/install.sh | sh
+# See notebooks/m0_smoke_test.ipynb Test 4a for the full procedure on Colab.

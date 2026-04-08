@@ -1,0 +1,208 @@
+{
+  "patches_applied": {
+    "command_cfg.lin_vel_x_range": [
+      -1.0,
+      1.0
+    ],
+    "command_cfg.lin_vel_y_range": [
+      -0.5,
+      0.5
+    ],
+    "command_cfg.ang_vel_range": [
+      -1.0,
+      1.0
+    ],
+    "reward_cfg.tracking_ang_vel": "0.2 \u2192 1.0 (parity with lin_vel)"
+  },
+  "env_cfg": {
+    "num_actions": 12,
+    "default_joint_angles": {
+      "FL_hip_joint": 0.0,
+      "FR_hip_joint": 0.0,
+      "RL_hip_joint": 0.0,
+      "RR_hip_joint": 0.0,
+      "FL_thigh_joint": 0.8,
+      "FR_thigh_joint": 0.8,
+      "RL_thigh_joint": 1.0,
+      "RR_thigh_joint": 1.0,
+      "FL_calf_joint": -1.5,
+      "FR_calf_joint": -1.5,
+      "RL_calf_joint": -1.5,
+      "RR_calf_joint": -1.5
+    },
+    "joint_names": [
+      "FR_hip_joint",
+      "FR_thigh_joint",
+      "FR_calf_joint",
+      "FL_hip_joint",
+      "FL_thigh_joint",
+      "FL_calf_joint",
+      "RR_hip_joint",
+      "RR_thigh_joint",
+      "RR_calf_joint",
+      "RL_hip_joint",
+      "RL_thigh_joint",
+      "RL_calf_joint"
+    ],
+    "kp": 20.0,
+    "kd": 0.5,
+    "termination_if_roll_greater_than": 10,
+    "termination_if_pitch_greater_than": 10,
+    "base_init_pos": [
+      0.0,
+      0.0,
+      0.42
+    ],
+    "base_init_quat": [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "episode_length_s": 20.0,
+    "resampling_time_s": 4.0,
+    "action_scale": 0.25,
+    "simulate_action_latency": true,
+    "clip_actions": 100.0
+  },
+  "obs_cfg": {
+    "obs_scales": {
+      "lin_vel": 2.0,
+      "ang_vel": 0.25,
+      "dof_pos": 1.0,
+      "dof_vel": 0.05
+    }
+  },
+  "reward_cfg": {
+    "tracking_sigma": 0.25,
+    "base_height_target": 0.3,
+    "feet_height_target": 0.075,
+    "reward_scales": {
+      "tracking_lin_vel": 1.0,
+      "tracking_ang_vel": 1.0,
+      "lin_vel_z": -1.0,
+      "base_height": -50.0,
+      "action_rate": -0.005,
+      "similar_to_default": -0.1
+    }
+  },
+  "command_cfg": {
+    "num_commands": 3,
+    "lin_vel_x_range": [
+      -1.0,
+      1.0
+    ],
+    "lin_vel_y_range": [
+      -0.5,
+      0.5
+    ],
+    "ang_vel_range": [
+      -1.0,
+      1.0
+    ]
+  },
+  "training": {
+    "num_envs": 4096,
+    "max_iterations": 250,
+    "rsl_rl_lib_version": "5.0.0",
+    "genesis_version": "0.4.3",
+    "device": "cuda:0",
+    "training_time_sec": 167,
+    "steps_per_second": 170000
+  },
+  "eval_results": {
+    "STOP": {
+      "target": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "actual": [
+        0.0,
+        -0.0,
+        -0.01
+      ],
+      "fall_pct": 0
+    },
+    "FORWARD": {
+      "target": [
+        0.5,
+        0.0,
+        0.0
+      ],
+      "actual": [
+        0.51,
+        -0.03,
+        -0.0
+      ],
+      "fall_pct": 0
+    },
+    "BACKWARD": {
+      "target": [
+        -0.3,
+        0.0,
+        0.0
+      ],
+      "actual": [
+        -0.26,
+        -0.01,
+        -0.0
+      ],
+      "fall_pct": 0
+    },
+    "TURN_LEFT": {
+      "target": [
+        0.0,
+        0.0,
+        0.5
+      ],
+      "actual": [
+        -0.05,
+        -0.02,
+        0.51
+      ],
+      "fall_pct": 0
+    },
+    "TURN_RIGHT": {
+      "target": [
+        0.0,
+        0.0,
+        -0.5
+      ],
+      "actual": [
+        -0.01,
+        -0.01,
+        -0.5
+      ],
+      "fall_pct": 0
+    },
+    "FORWARD+TURN": {
+      "target": [
+        0.3,
+        0.0,
+        0.5
+      ],
+      "actual": [
+        0.24,
+        0.16,
+        0.51
+      ],
+      "fall_pct": 0
+    },
+    "SIDESTEP": {
+      "target": [
+        0.0,
+        0.3,
+        0.0
+      ],
+      "actual": [
+        -0.21,
+        0.22,
+        0.01
+      ],
+      "fall_pct": 0
+    }
+  },
+  "verdict": "M1 PASS",
+  "timestamp": "2026-04-07 16:03:52"
+}
